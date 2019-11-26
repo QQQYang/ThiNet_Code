@@ -1,6 +1,9 @@
+# import ptvsd
+# ptvsd.enable_attach(address = ('0.0.0.0', 5679))
+# ptvsd.wait_for_attach()
 import sys
-caffe_root = '/home/luojh2/Software/caffe-master/'
-sys.path.insert(0, caffe_root + 'python')
+# caffe_root = '/home/luojh2/Software/caffe-master/'
+# sys.path.insert(0, caffe_root + 'python')
 from caffe.proto import caffe_pb2
 import os.path as osp
 import os
@@ -57,17 +60,19 @@ class Solver:
         self.p.test_interval = 10000
         self.p.test_initialization = True
         
-        if compress_block==0:
-            self.p.base_lr = 0.0001
-        else:
-            self.p.base_lr = 0.0001
+        # if compress_block==0:
+        #     self.p.base_lr = 0.0001
+        # else:
+        #     self.p.base_lr = 0.0001
+        self.p.base_lr = 0.0001
 
-        if b == 15 and compress_block==1:  # the final layer
-            self.p.base_lr = 0.001
-            self.p.max_iter = 90000
-            self.p.stepvalue.extend([30000, 60000])
-        else:
-            self.p.max_iter = 10000
+        # if b == 15 and compress_block==1:  # the final layer
+        #     self.p.base_lr = 0.001
+        #     self.p.max_iter = 90000
+        #     self.p.stepvalue.extend([30000, 60000])
+        # else:
+        #     self.p.max_iter = 10000
+        self.p.max_iter = 10000
 
         self.p.lr_policy = self.policy.multistep
         self.p.gamma = 0.1
@@ -165,9 +170,9 @@ class Net:
     def transform_param(self, mean_value=128, batch_size=128, scale=.0078125, mirror=1, crop_size=None,
                         mean_file_size=None, phase=None):
         new_transform_param = self.this.transform_param
-        new_transform_param.mean_value.extend([104])
-        new_transform_param.mean_value.extend([117])
-        new_transform_param.mean_value.extend([123])
+        new_transform_param.mean_value.extend([mean_value])
+        new_transform_param.mean_value.extend([mean_value])
+        new_transform_param.mean_value.extend([mean_value])
 
         new_transform_param.mirror = mirror
         if crop_size is not None:
@@ -273,10 +278,10 @@ class Net:
 
     def Accuracy(self, name='Accuracy', label='label'):
         cur_bottom = 'fc1000'
-        self.setup(name + '/top1', 'Accuracy',
+        self.setup(name + '_top1', 'Accuracy',
                    bottom=[cur_bottom, label], top=['accuracy@1'])
         self.this.accuracy_param.top_k = 1
-        self.setup(name + '/top5', 'Accuracy',
+        self.setup(name + '_top5', 'Accuracy',
                    bottom=[cur_bottom, label], top=['accuracy@5'])
         self.this.accuracy_param.top_k = 5
 
@@ -366,20 +371,28 @@ class Net:
         self.Pooling("pool1", pool='max', global_pooling=False,
                      kernel_size=3, stride=2)
 
-        if compress_block == 0:
-            # compress 1, not 2
-            rate1 = np.ones([1, 16])
-            for i in range(0, compress_layer+1):
-                rate1[0, i] = rate1[0, i] * compress_rate
-            rate2 = np.ones([1, 16])
-            for i in range(0, compress_layer):
-                rate2[0, i] = rate2[0, i] * compress_rate
-        else:
-            # both
-            rate1 = np.ones([1, 16])
-            for i in range(0, compress_layer + 1):
-                rate1[0, i] = rate1[0, i] * compress_rate
-            rate2 = rate1.copy()
+        # if compress_block == 0:
+        #     # compress 1, not 2
+        #     rate1 = np.ones([1, 16])
+        #     for i in range(0, compress_layer+1):
+        #         rate1[0, i] = rate1[0, i] * compress_rate
+        #     rate2 = np.ones([1, 16])
+        #     for i in range(0, compress_layer):
+        #         rate2[0, i] = rate2[0, i] * compress_rate
+        # else:
+        #     # both
+        #     rate1 = np.ones([1, 16])
+        #     for i in range(0, compress_layer + 1):
+        #         rate1[0, i] = rate1[0, i] * compress_rate
+        #     rate2 = rate1.copy()
+        rate1 = np.ones([1, 16])
+        rate2 = np.ones([1, 16])
+        for i in range(len(compress_layer)):
+            for j in range(len(compress_block)):
+                if compress_block[j] == 1:
+                    rate1[0, compress_layer[i]] = rate1[0, compress_layer[i]] * compress_rate
+                else:
+                    rate2[0, compress_layer[i]] = rate2[0, compress_layer[i]] * compress_rate
 
         # 2
         output = 64
@@ -406,9 +419,9 @@ class Net:
         self.res_block(layers[14], rate1[0, 14], rate2[0, 14], output, proj=False)
         self.res_block(layers[15], rate1[0, 15], rate2[0, 15], output, proj=False)
 
-        self.Pooling("pool5", pool='AVE', global_pooling=False,
+        self.Pooling("pool5", pool='AVE', global_pooling=True,
                      kernel_size=7, stride=1)
-        self.InnerProduct(name='fc1000', num_output=1000)
+        self.InnerProduct(name='fc1000', num_output=10)
         if deploy:
             self.Softmax()
         else:
@@ -416,35 +429,37 @@ class Net:
             self.Accuracy()
 
 
-def solver_and_prototxt(compress_layer, compress_rate, compress_block):
+def solver_and_prototxt(root_dir, compress_layer, compress_rate, compress_block):
     layers = ['2a', '2b', '2c', '3a', '3b', '3c', '3d',
               '4a', '4b', '4c', '4d', '4e', '4f', '5a', '5b', '5c']
-    pt_folder = layers[compress_layer] + '_' + str(compress_block)
-    if not os.path.exists(pt_folder):
-        os.mkdir(pt_folder)
-    name = 'resnet-' + layers[compress_layer] + str(compress_block) +'-ImageNet'
+    # pt_folder = layers[compress_layer] + '_' + str(compress_block)
+    model_dir = os.path.join(root_dir, '-'.join([str(i) for i in compress_layer])+'_'+'-'.join([str(i) for i in compress_block])+'_'+str(compress_rate))
+    if not os.path.exists(model_dir):
+        os.mkdir(model_dir)
+    # name = 'resnet-' + layers[compress_layer] + str(compress_block) +'-ImageNet'
 
-    solver = Solver(folder=pt_folder, b=compress_layer, compress_block=compress_block)
+    solver = Solver(folder=model_dir, b=compress_layer, compress_block=compress_block)
     solver.write()
 
-    builder = Net(name)
-    builder.Data('/opt/luojh/Dataset/ImageNet/lmdb/ilsvrc12_train_lmdb', backend='LMDB', phase='TRAIN', mirror=True,
-                 crop_size=224, batch_size=32)
-    builder.Data('/opt/luojh/Dataset/ImageNet/lmdb/ilsvrc12_val_lmdb', backend='LMDB', phase='TEST', mirror=False,
-                 crop_size=224, batch_size=10)
+    builder = Net('-'.join([str(i) for i in compress_layer])+'_'+'-'.join([str(i) for i in compress_block])+'_'+str(compress_rate))
+    builder.Data('/ssd/yqian/prune/dataset/cifar-10-batches-py/train', backend='LMDB', phase='TRAIN', mirror=True,
+                 crop_size=32, batch_size=128)
+    builder.Data('/ssd/yqian/prune/dataset/cifar-10-batches-py/test', backend='LMDB', phase='TEST', mirror=False,
+                 crop_size=32, batch_size=64)
     builder.resnet_50(layers, compress_layer, compress_rate, compress_block)
-    builder.write(name='trainval.prototxt', folder=pt_folder)
+    builder.write(name='trainval.prototxt', folder=model_dir)
+    # builder.write(name='trainval.prototxt', folder=pt_folder)
 
-    if compress_block == 0:
-        compress_block = 1
-        compress_layer -= 1
-    else:
-        compress_block =0
+    # if compress_block == 0:
+    #     compress_block = 1
+    #     compress_layer -= 1
+    # else:
+    #     compress_block =0
 
-    builder = Net(name + '-old')
-    builder.setup('data', 'Data', top=['data'])
-    builder.resnet_50(layers, compress_layer, compress_rate, compress_block, deploy=True)
-    builder.write(name='deploy.prototxt', folder=pt_folder, deploy=True)
+    # builder = Net(name + '-old')
+    # builder.setup('data', 'Data', top=['data'])
+    # builder.resnet_50(layers, compress_layer, compress_rate, compress_block, deploy=True)
+    # builder.write(name='deploy.prototxt', folder=pt_folder, deploy=True)
     print "Finished net prototxt generation!"
 
 

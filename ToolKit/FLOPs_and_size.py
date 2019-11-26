@@ -5,13 +5,13 @@ Please see LICENSE file in the project root for terms.
 """
 import sys
 import os
-if os.path.isfile('../caffe_path.txt'):
-    fid = open('../caffe_path.txt', 'r')
-    caffe_root = fid.readline().strip('\n')
-    fid.close()
-else:
-    caffe_root = '/home/luojh2/Software/caffe-master/python/'
-sys.path.insert(0, caffe_root)
+# if os.path.isfile('../caffe_path.txt'):
+#     fid = open('../caffe_path.txt', 'r')
+#     caffe_root = fid.readline().strip('\n')
+#     fid.close()
+# else:
+#     caffe_root = '/home/luojh2/Software/caffe-master/python/'
+# sys.path.insert(0, caffe_root)
 import caffe
 from caffe.proto import caffe_pb2
 from google.protobuf import text_format
@@ -40,7 +40,7 @@ def get_complexity(netspec=None, prototxt_file=None, mode=None):
 
     net_params = caffe_pb2.NetParameter()
     text_format.Merge(open(prototxt_file).read(), net_params)
-    print '\n ########### output ###########'
+    # print '\n ########### output ###########'
     for layer in net_params.layer:
         if layer.name in net.params:
 
@@ -56,10 +56,10 @@ def get_complexity(netspec=None, prototxt_file=None, mode=None):
             else:
                 flops = net.params[layer.name][0].data.size
             flops *= 2 
-            print('%s: #params: %s, #FLOPs: %s') % (
-                layer.name,
-                digit2string(params),
-                digit2string(flops))
+            # print('%s: #params: %s, #FLOPs: %s') % (
+            #     layer.name,
+            #     digit2string(params),
+            #     digit2string(flops))
             total_params += params
             total_flops += flops
 

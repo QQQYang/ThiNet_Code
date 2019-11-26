@@ -136,7 +136,7 @@ def get_index(compress_rate, compress_layer, gpu):
                     count += 1
 
             time_end = time.time()
-            print 'Done! use %f second, %d image' % (time_end - time_start, count / channel_num)
+            print('Done! use %f second, %d image' % (time_end - time_start, count / channel_num))
 
     # select filters
     return value_sum(X, Y, compress_rate)
@@ -179,7 +179,7 @@ def value_sum(x, y, compress_rate):
 
     loss = np.linalg.norm(y - selected_x*w)
     print('loss before w={0:.3f}, loss with w={1:.3f}'.format(np.linalg.norm(y - np.sum(selected_x, 1)), loss))
-    print 'Time used: %f s' % (time.time()-time_s)
+    print('Time used: %f s' % (time.time()-time_s))
     return index, w
 
 
@@ -244,7 +244,7 @@ def compress_net(index, w, compress_layer):
     net_new.params[next_layer][1].data[...] = bias
 
     net_new.save('model.caffemodel')
-    print 'OK!'
+    print('OK!')
 
 
 if __name__ == '__main__':
