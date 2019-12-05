@@ -2,7 +2,7 @@
 # ptvsd.enable_attach(address = ('0.0.0.0', 5678))
 # ptvsd.wait_for_attach()
 import os
-import compress_model as cm
+import compress_model_reid as cm
 import argparse
 import numpy as np
 
@@ -33,8 +33,7 @@ if __name__ == '__main__':
     opt.gpu = int(gpu)
     cm.pipeline(opt)
 
-    model_dir = os.path.join('/ssd/yqian/prune/model/ResNet50', '-'.join([str(i) for i in opt.compress_layer])+'_'+'-'.join([str(i) for i in opt.compress_block])+'_'+'-'.join([str(i) for i in opt.compress_rate]))
-    os.system('/root/caffe/build/tools/caffe_parallel train --solver %s/solver.prototxt --weights=%s/prune.caffemodel' % (model_dir, model_dir))
-    os.system('/root/caffe/build/tools/caffe_parallel test --model %s/trainval.prototxt --weights=%s/snapshot/_iter_10000.caffemodel.h5' % (model_dir, model_dir))
-    os.system('python ThiNet_Code/ToolKit/FLOPs_and_size.py %s/trainval.prototxt' % model_dir)
+    # model_dir = os.path.join('/ssd/yqian/prune/model/reid', '-'.join([str(i) for i in opt.compress_layer])+'_'+'-'.join([str(i) for i in opt.compress_block])+'_'+'-'.join([str(i) for i in opt.compress_rate]))
+    # os.system('mpiexec --allow-run-as-root -np 8 /root/caffe/build/tools/caffe_parallel train --solver %s/solver.prototxt --weights=%s/prune.caffemodel 2>&1 | tee %s_train.log' % (model_dir, model_dir, model_dir))
+    # os.system('python ThiNet_Code/ToolKit/FLOPs_and_size.py %s/trainval.prototxt' % model_dir)
     

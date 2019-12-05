@@ -1,3 +1,4 @@
+#coding=utf-8
 # import ptvsd
 # ptvsd.enable_attach(address = ('0.0.0.0', 5679))
 # ptvsd.wait_for_attach()
@@ -5,9 +6,11 @@ import sys
 # caffe_root = '/home/luojh2/Software/caffe-master/'
 # sys.path.insert(0, caffe_root + 'python')
 from caffe.proto import caffe_pb2
+import caffe
 import os.path as osp
 import os
 import numpy as np
+from google.protobuf import text_format
 
 
 class Solver:
@@ -171,9 +174,9 @@ class Net:
     def transform_param(self, mean_value=128, batch_size=128, scale=.0078125, mirror=1, crop_size=None,
                         mean_file_size=None, phase=None):
         new_transform_param = self.this.transform_param
-        new_transform_param.mean_value.extend([mean_value])
-        new_transform_param.mean_value.extend([mean_value])
-        new_transform_param.mean_value.extend([mean_value])
+        new_transform_param.mean_value.extend([104])
+        new_transform_param.mean_value.extend([117])
+        new_transform_param.mean_value.extend([123])
 
         new_transform_param.mirror = mirror
         if crop_size is not None:
@@ -186,6 +189,17 @@ class Net:
             new_data_param.backend = new_data_param.LEVELDB
         else:
             new_data_param.backend = new_data_param.LMDB
+        new_data_param.batch_size = batch_size
+
+    def image_data_param(self, source, root_folder, batch_size=30):
+        new_data_param = self.this.image_data_param
+        new_data_param.source = source
+        new_data_param.root_folder = root_folder
+        new_data_param.occ_aug = True
+        new_data_param.class_num = 10
+        new_data_param.shuffle = True
+        new_data_param.new_height = 384
+        new_data_param.new_width = 128
         new_data_param.batch_size = batch_size
 
     def weight_filler(self, filler='msra'):
@@ -230,12 +244,13 @@ class Net:
 
     #************************** layers **************************
 
-    def Data(self, source, backend, top=['data', 'label'], name="data", batch_size=30, phase=None, **kwargs):
-        self.setup(name, 'Data', top=top)
+    def Data(self, source, root_folder, backend, top=['data', 'label'], name="data", batch_size=10, phase=None, **kwargs):
+        self.setup(name, 'NpairDataClassEqualSamplingSSL', top=top)
 
         self.include(phase)
 
-        self.data_param(source, batch_size=batch_size, backend=backend)
+        # self.data_param(source, batch_size=batch_size, backend=backend)
+        self.image_data_param(source, root_folder, batch_size)
         self.transform_param(phase=phase, **kwargs)
 
     def Convolution(self, name, bottom=[], num_output=None, kernel_size=3, pad=1, stride=1, decay=True, bias=False, freeze=False, bias_term=None):
@@ -295,9 +310,9 @@ class Net:
         self.weight_filler()
         self.bias_filler()
 
-    def Pooling(self, name, pool='AVE', global_pooling=False, kernel_size=3, stride=2):
+    def Pooling(self, name, top=[], pool='AVE', global_pooling=False, kernel_size=3, stride=2):
         """MAX AVE """
-        self.setup(name, 'Pooling')
+        self.setup(name, 'Pooling', top=top)
         if pool == 'AVE':
             self.this.pooling_param.pool = self.this.pooling_param.AVE
         else:
@@ -422,7 +437,7 @@ class Net:
 
         self.Pooling("pool5", pool='AVE', global_pooling=True,
                      kernel_size=7, stride=1)
-        self.InnerProduct(name='fc1000', num_output=10)
+        self.InnerProduct(name='fc256', num_output=256)
         if deploy:
             self.Softmax()
         else:
@@ -443,10 +458,8 @@ def solver_and_prototxt(root_dir, compress_layer, compress_rate, compress_block)
     solver.write()
 
     builder = Net('-'.join([str(i) for i in compress_layer])+'_'+'-'.join([str(i) for i in compress_block])+'_'+'-'.join([str(i) for i in compress_rate]))
-    builder.Data('/ssd/yqian/prune/dataset/cifar-10-batches-py/train', backend='LMDB', phase='TRAIN', mirror=True,
-                 crop_size=32, batch_size=128)
-    builder.Data('/ssd/yqian/prune/dataset/cifar-10-batches-py/test', backend='LMDB', phase='TEST', mirror=False,
-                 crop_size=32, batch_size=64)
+    builder.Data('/ssd/yqian/prune/dataset/data/train_all_new.txt', '/ssd/yqian/prune/dataset/data/', backend='LMDB', phase='TRAIN', mirror=True, batch_size=10)
+    builder.Data('/ssd/yqian/prune/dataset/cifar-10-batches-py/test', '/ssd/yqian/prune/dataset/data/test_data/all/', backend='LMDB', phase='TEST', mirror=False, batch_size=2)
     builder.resnet_50(layers, compress_layer, compress_rate, compress_block)
     builder.write(name='trainval.prototxt', folder=model_dir)
     # builder.write(name='trainval.prototxt', folder=pt_folder)
@@ -464,6 +477,55 @@ def solver_and_prototxt(root_dir, compress_layer, compress_rate, compress_block)
     builder.write(name='deploy.prototxt', folder=model_dir, deploy=True)
     print "Finished net prototxt generation!"
 
+def solver_and_prototxt2(root_dir, compress_layer, compress_rate, compress_block):
+    layers = ['2a', '2b', '2c', '3a', '3b', '3c', '3d', '4a', '4b', '4c', '4d', '4e', '4f', '5a', '5b', '5c']
+    # pt_folder = layers[compress_layer] + '_' + str(compress_block)
+    model_dir = os.path.join(root_dir, '-'.join([str(i) for i in compress_layer])+'_'+'-'.join([str(i) for i in compress_block])+'_'+'-'.join([str(i) for i in compress_rate]))
+    if not os.path.exists(model_dir):
+        os.mkdir(model_dir)
+        os.mkdir(os.path.join(model_dir, 'snapshot'))
+    
+    # solver.prototxt
+    solver = caffe_pb2.SolverParameter()
+    original_solver = '/ssd/yqian/prune/model/reid/solver_baseline.prototxt'
+    text_format.Merge(open(original_solver).read(), solver)
+    solver.net = os.path.join(model_dir, 'trainval.prototxt')
+    solver.snapshot_prefix = os.path.join(model_dir, 'snapshot') + '/'
+
+    with open(os.path.join(model_dir, 'solver.prototxt'), 'wb') as f:
+        f.write(str(solver))
+
+    # train.prototxt
+    original_train_prototxt = '/ssd/yqian/prune/model/reid/train_baseline.prototxt'
+    net = caffe_pb2.NetParameter()
+    text_format.Merge(open(original_train_prototxt).read(), net)
+
+    # test.prototxt
+    original_test_prototxt = '/ssd/yqian/prune/model/reid/deploy_baseline.prototxt'
+    net_test = caffe_pb2.NetParameter()
+    text_format.Merge(open(original_test_prototxt).read(), net_test)
+
+    for i in range(len(compress_layer)):
+        for j in range(len(compress_block)):
+            if compress_block[j] == 1:
+                cur_layer = 'res' + layers[compress_layer[i]] + '_branch2a'
+            else:
+                cur_layer = 'res' + layers[compress_layer[i]] + '_branch2b'
+            for k in range(len(net.layer)):
+                if net.layer[k].name == cur_layer:
+                    net.layer[k].convolution_param.num_output = int(net.layer[k].convolution_param.num_output*compress_rate[j])
+                    continue
+            for k in range(len(net_test.layer)):
+                if net_test.layer[k].name == cur_layer:
+                    net_test.layer[k].convolution_param.num_output = int(net_test.layer[k].convolution_param.num_output*compress_rate[j])
+                    continue
+    with open(os.path.join(model_dir, 'trainval.prototxt'), 'wb') as f:
+        f.write(str(net))
+
+    with open(os.path.join(model_dir, 'deploy.prototxt'), 'wb') as f:
+        f.write(str(net_test))
+
+    # print('hello')
 
 if __name__ == '__main__':
     compress_layer = 0
